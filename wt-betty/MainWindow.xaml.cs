@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows;
 using System.Windows.Threading;
 using System.Globalization;
@@ -43,6 +43,9 @@ namespace wt_betty
             slider_A.Value = Convert.ToDouble(User.Default.AoA);
             textBox_aSlider.Text = slider_A.Value.ToString();
             cbx_pullup.IsChecked = User.Default.EnablePullUp;
+            comboBox_planeType.SelectedIndex = User.Default.PlaneType;
+            tbx_groundLevel_m.Text = User.Default.GroundLevel.ToString();
+            cbx_groundLevelAutoDetect.IsChecked = User.Default.EnableGroundLevelAutoDetect;
             cbx_fuel.IsChecked = User.Default.EnableFuel;
             cbx_gear.IsChecked = User.Default.EnableGear;
             tbx_gearDown.Text = User.Default.GearDown.ToString();
@@ -133,10 +136,11 @@ namespace wt_betty
 
                 if ((myState.valid == "true") && (myIndicator.valid == "true") && (myIndicator.type != "dummy_plane") && (myIndicator.type != null))
                 {
-
                     decimal G = Convert.ToDecimal(myState.Ny, culture);
+                    decimal M = Convert.ToDecimal(myState.M, culture);  // Mach Number
                     decimal AoA = Convert.ToDecimal(myState.AoA, culture);
                     decimal Vspeed = Convert.ToDecimal(myState.Vy, culture);
+                    double sinkRate = Convert.ToDouble(myState.Vy, culture);
                     int Fuel = Convert.ToInt32(myState.Mfuel) * 1000;//MFuel and MFuel0 are given in integers
                     int FuelFull = Convert.ToInt32(myState.Mfuel0);
                     int Throttle = Convert.ToInt32(Convert.ToDecimal(myIndicator.throttle, culture) * 100);//TODO throttle variable only avialble in single engine aircraft
@@ -202,14 +206,83 @@ namespace wt_betty
                     }
                     
                     //PULL UP Ground/sea level Proximity Warning
-                    //desirable to have about 3 seconds before crash
-                    if (cbx_pullup.IsChecked == true && 0 - Vspeed * (2 + (decimal)Math.Pow(IAS / 100, 0.7)) > Alt)
+                    if (cbx_pullup.IsChecked == true)
                     {
-                        System.Media.SoundPlayer myPlayer;
-                        myPlayer = new System.Media.SoundPlayer(Properties.Resources.PullUp);
-                        myPlayer.PlaySync();
+                        if (sinkRate <= -7.62 && IsPositiveInteger(tbx_groundLevel_m.Text))
+                        {
+                            int meterAboveGroundLevel = Alt - Convert.ToInt32(tbx_groundLevel_m.Text);
+                            if (comboBox_planeType.SelectedIndex == 0)
+                            {
+                                // Profile for prop/turboprop
+                                if (meterAboveGroundLevel <= 596.8)
+                                {
+                                    if (meterAboveGroundLevel <= 105.4)
+                                    {
+                                        if (meterAboveGroundLevel < (105 / 1.35) * ((-sinkRate) - 7.62))
+                                        {
+                                            //first slope
+                                            System.Media.SoundPlayer myPlayer;
+                                            myPlayer = new System.Media.SoundPlayer(Properties.Resources.PullUp);
+                                            myPlayer.PlaySync();
+                                        }
+                                    }
+                                    else
+                                    {
+                                        if (meterAboveGroundLevel < ((491.34 / 41.83) * ((-sinkRate) - 8.97)) + 105.46)
+                                        {
+                                            //second slope
+                                            System.Media.SoundPlayer myPlayer;
+                                            myPlayer = new System.Media.SoundPlayer(Properties.Resources.PullUp);
+                                            myPlayer.PlaySync();
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // Profile for jet
+                                if (meterAboveGroundLevel <= 748.2)
+                                {
+                                    if (meterAboveGroundLevel <= 57.9)
+                                    {
+                                        if (meterAboveGroundLevel < (57 / 1.35) * ((-sinkRate) - 7.62))
+                                        {
+                                            //first slope
+                                            System.Media.SoundPlayer myPlayer;
+                                            myPlayer = new System.Media.SoundPlayer(Properties.Resources.PullUp);
+                                            myPlayer.PlaySync();
+                                        }
+                                    }
+                                    else
+                                    {
+                                        if (meterAboveGroundLevel < ((691.3 / 26.73) * ((-sinkRate) - 8.97)) + 57)
+                                        {
+                                            //second slope
+                                            System.Media.SoundPlayer myPlayer;
+                                            myPlayer = new System.Media.SoundPlayer(Properties.Resources.PullUp);
+                                            myPlayer.PlaySync();
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
-                    
+
+                    //Ground level auto detect
+                    if (cbx_groundLevelAutoDetect.IsChecked == true)
+                    {
+                        if (Throttle == 0 && M == 0)
+                        {
+                            // if the plane is stationary
+                            tbx_groundLevel_m.IsEnabled = false;
+                            tbx_groundLevel_m.Text = Alt.ToString();
+                        }
+                        else
+                        {
+                            tbx_groundLevel_m.IsEnabled = true;
+                        }
+                    }
+
                     //GEAR UP/DOWN
                     if (User.Default.EnableGear == true && gear == 100 && IAS > User.Default.GearUp && myIndicator.gears_lamp == "0")
                     {
@@ -237,6 +310,26 @@ namespace wt_betty
                 tbx_msgs.Text = ex.Message;
                 dispatcherTimer1.Stop();
                 dispatcherTimer2.Start();
+            }
+        }
+
+        public bool IsPositiveInteger(String input)
+        {
+            int testValue;
+            if (int.TryParse(input, out testValue))
+            {
+                if (testValue >= 0)
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
             }
         }
 
@@ -284,6 +377,9 @@ namespace wt_betty
                 User.Default.EnableA = cbx_a.IsChecked.Value;
                 User.Default.AoA = Convert.ToInt32(slider_A.Value);
                 User.Default.EnablePullUp = cbx_pullup.IsChecked.Value;
+                User.Default.PlaneType = comboBox_planeType.SelectedIndex;
+                User.Default.GroundLevel = Convert.ToInt32(tbx_groundLevel_m.Text);
+                User.Default.EnableGroundLevelAutoDetect = cbx_groundLevelAutoDetect.IsChecked.Value;
                 User.Default.EnableFuel = cbx_fuel.IsChecked.Value;
                 User.Default.EnableGear = cbx_gear.IsChecked.Value;
                 User.Default.GearDown = Convert.ToInt32(tbx_gearDown.Text);
@@ -305,6 +401,9 @@ namespace wt_betty
                 User.Default.EnableA = true;
                 User.Default.AoA = 12;
                 User.Default.EnablePullUp = true;
+                User.Default.PlaneType = 0;
+                User.Default.GroundLevel = 75;
+                User.Default.EnableGroundLevelAutoDetect = true;
                 User.Default.EnableFuel = true;
                 User.Default.EnableGear = true;
                 User.Default.GearDown = 270;
@@ -318,6 +417,9 @@ namespace wt_betty
                 slider_A.Value = Convert.ToDouble(User.Default.AoA);
                 textBox_aSlider.Text = slider_A.Value.ToString();
                 cbx_pullup.IsChecked = User.Default.EnablePullUp;
+                comboBox_planeType.SelectedIndex = User.Default.PlaneType;
+                tbx_groundLevel_m.Text = User.Default.GroundLevel.ToString();
+                cbx_groundLevelAutoDetect.IsChecked = User.Default.EnableGroundLevelAutoDetect;
                 cbx_fuel.IsChecked = User.Default.EnableFuel;
                 cbx_gear.IsChecked = User.Default.EnableGear;
                 tbx_gearDown.Text = User.Default.GearDown.ToString();
@@ -334,6 +436,63 @@ namespace wt_betty
             var helpFile = Path.Combine(Path.GetTempPath(), "wt-betty-help.txt");
             File.WriteAllText(helpFile, Properties.Resources.wt_betty_help);
             System.Diagnostics.Process.Start(helpFile);
+        }
+
+        private void button_setAltitude_current_Click(object sender, RoutedEventArgs e)
+        {
+            if ((myState.valid == "true") && (myIndicator.valid == "true") && (myIndicator.type != "dummy_plane") && (myIndicator.type != null))
+            {
+                int currentAlt = Convert.ToInt32(myState.H);
+                if (currentAlt >= 1)
+                {
+                    tbx_groundLevel_m.Text = currentAlt.ToString();
+
+                    if (cbx_groundLevelAutoDetect.IsChecked == true)
+                    {
+                        cbx_groundLevelAutoDetect.IsChecked = false;
+                    }
+                }
+            }
+        }
+
+        private void button_setAltitude_seaLevel_Click(object sender, RoutedEventArgs e)
+        {
+            tbx_groundLevel_m.Text = "0";
+            if (cbx_groundLevelAutoDetect.IsChecked == true)
+            {
+                cbx_groundLevelAutoDetect.IsChecked = false;
+            }
+        }
+
+        private void cbx_groundLevelAutoDetect_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (tbx_groundLevel_m.IsEnabled == false)
+            {
+                tbx_groundLevel_m.IsEnabled = true;
+            }
+        }
+    }
+
+    public class mToftConversion : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            try
+            {
+                int meter = System.Convert.ToInt32(value.ToString());
+                double feet = meter * 3.2808;
+                String feet_rounded = String.Format("{0:0}", Math.Truncate(feet * 10) / 10) + "ft";
+                return feet_rounded;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+                return "ERROR";
+            }
+        }
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return false;
         }
     }
 
